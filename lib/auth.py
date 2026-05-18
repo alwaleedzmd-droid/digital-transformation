@@ -43,13 +43,22 @@ def _users() -> dict[str, str]:
 
 
 def _check(username: str, password: str) -> bool:
+    """تحقق من بيانات الدخول.
+
+    - اسم المستخدم: غير حساس لحالة الأحرف ويتجاهل المسافات الإضافية في الأطراف
+    - كلمة المرور: حساسة لحالة الأحرف (كما يجب)
+    """
     users = _users()
     if not users or not username or not password:
         return False
-    # نمر على كل المستخدمين بمقارنة ثابتة الوقت لتجنب timing attacks
+
+    username_normalized = username.strip().casefold()
+
     matched = False
     for u, p in users.items():
-        if hmac.compare_digest(username, u) and hmac.compare_digest(password, p):
+        u_norm = u.strip().casefold()
+        # مقارنة ثابتة الوقت لتجنب timing attacks
+        if hmac.compare_digest(username_normalized, u_norm) and hmac.compare_digest(password, p):
             matched = True
     return matched
 
