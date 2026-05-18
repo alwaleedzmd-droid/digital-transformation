@@ -1,6 +1,8 @@
 """مصادقة للوحة التحكم — يدعم مستخدمين متعددين من Streamlit secrets."""
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import hmac
 import streamlit as st
 
@@ -23,12 +25,21 @@ def _users() -> dict[str, str]:
     except (KeyError, FileNotFoundError):
         return {}
 
-    if "users" in section and isinstance(section["users"], dict):
-        return dict(section["users"])
+    # نجرّب جلب users كقاموس فرعي (Streamlit يستخدم AttrDict وليس dict)
+    try:
+        users_section = section["users"]
+        if isinstance(users_section, Mapping):
+            return {str(k): str(v) for k, v in users_section.items()}
+    except (KeyError, TypeError):
+        pass
 
-    u = section.get("username", "")
-    p = section.get("password", "")
-    return {u: p} if u and p else {}
+    # السقوط للشكل القديم: مستخدم واحد
+    try:
+        u = section["username"]
+        p = section["password"]
+        return {str(u): str(p)} if u and p else {}
+    except (KeyError, TypeError):
+        return {}
 
 
 def _check(username: str, password: str) -> bool:
