@@ -8,49 +8,64 @@ import streamlit as st
 from supabase import Client, create_client
 
 
-def _get_secret(section: str, key: str, default: str = "") -> str:
+def _get_secret(section: str, key: str) -> str:
+    """يقرأ قيمة من st.secrets ويرفع خطأ واضح إذا كانت مفقودة أو فارغة."""
     try:
-        return st.secrets[section][key]
+        section_data = st.secrets[section]
     except (KeyError, FileNotFoundError):
-        return default
+        raise RuntimeError(
+            f"الأسرار مفقودة: لم يتم العثور على القسم [{section}] في Streamlit Secrets. "
+            "أضفها من: Streamlit Cloud → Manage app → Settings → Secrets"
+        )
+
+    try:
+        val = section_data[key]
+    except (KeyError, TypeError):
+        raise RuntimeError(
+            f"المفتاح '{section}.{key}' مفقود في Streamlit Secrets."
+        )
+
+    val = str(val).strip()
+    if not val:
+        raise RuntimeError(
+            f"المفتاح '{section}.{key}' موجود لكنه فارغ — أضف قيمته في Streamlit Secrets."
+        )
+    return val
+
+
+# ملاحظة: نستخدم @st.cache_resource لإعادة استخدام نفس الاتصال،
+# لكن نرفع استثناءً عند الفشل بدلاً من إرجاع None، حتى يعيد Streamlit المحاولة
+# بعد تحديث الأسرار (الاستثناءات لا تُخزّن في cache_resource).
 
 
 @st.cache_resource(show_spinner=False)
-def get_public_client() -> Client | None:
+def get_public_client() -> Client:
     """عميل بمفتاح anon — للنموذج العام."""
     url = _get_secret("supabase", "url")
     key = _get_secret("supabase", "anon_key")
-    if not url or not key:
-        return None
     return create_client(url, key)
 
 
 @st.cache_resource(show_spinner=False)
-def get_admin_client() -> Client | None:
+def get_admin_client() -> Client:
     """عميل بمفتاح service_role — للوحة التحكم فقط."""
     url = _get_secret("supabase", "url")
     key = _get_secret("supabase", "service_role_key")
-    if not url or not key:
-        return None
     return create_client(url, key)
 
 
 def insert_submission(payload: dict) -> dict:
     """يحفظ استجابة جديدة في Supabase ويعيد السجل المُدرج."""
     client = get_public_client()
-    if client is None:
-        raise RuntimeError("لم يتم إعداد Supabase — راجع .streamlit/secrets.toml")
     res = client.table("submissions").insert(payload).execute()
     if not res.data:
-        raise RuntimeError("فشل حفظ الاستجابة")
+        raise RuntimeError("فشل حفظ الاستجابة في Supabase (استجابة فارغة)")
     return res.data[0]
 
 
 def fetch_all_submissions() -> list[dict]:
     """يجلب كل الاستجابات — يتطلب service_role."""
     client = get_admin_client()
-    if client is None:
-        raise RuntimeError("لم يتم إعداد service_role_key")
     res = (
         client.table("submissions")
         .select("*")
@@ -62,6 +77,4 @@ def fetch_all_submissions() -> list[dict]:
 
 def delete_submission(submission_id: str) -> None:
     client = get_admin_client()
-    if client is None:
-        raise RuntimeError("لم يتم إعداد service_role_key")
     client.table("submissions").delete().eq("id", submission_id).execute()
